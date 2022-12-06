@@ -31,8 +31,6 @@ void histogram_equalization(unsigned char *img_out, unsigned char *img_in, int *
         if (lut[i] < 0) {
             lut[i] = 0;
         }
-
-
     }
 
     /* Get the result image */
