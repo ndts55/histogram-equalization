@@ -1,8 +1,42 @@
-//
-// Created by ndts on 08/12/22.
-//
+#pragma once
 
-#ifndef HISTOGRAM_EQUALIZATION_IMAGEIO_H
-#define HISTOGRAM_EQUALIZATION_IMAGEIO_H
+#include <string>
+#include <fstream>
+#include <sstream>
+#include <iostream>
 
-#endif //HISTOGRAM_EQUALIZATION_IMAGEIO_H
+using namespace std;
+
+class PGM {
+private:
+    int width, height, max;
+    string img;
+public:
+    explicit PGM(const string &path) {
+        width = 0;
+        height = 0;
+        img = "";
+
+
+        ifstream ifs(path);
+        stringstream ss;
+        string line;
+        // Version
+        getline(ifs, line);
+        cout << "Version: " << line << endl;
+
+        // Dimensions
+        ss << ifs.rdbuf();
+        ss >> width >> height;
+        cout << "Width: " << width << "\tHeight: " << height << endl;
+
+        // Max
+        ss >> max;
+        cout << "Max: " << max << endl;
+
+        // Image Data
+        img = ss.str();
+    }
+
+    string Img() { return img; }
+};
