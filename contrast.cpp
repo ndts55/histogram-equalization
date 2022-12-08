@@ -126,9 +126,6 @@ void free_ppm(PPM_IMG img) {
     free(img.img_b);
 }
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "cert-err34-c"
-
 PGM_IMG read_pgm(const char *path) {
     FILE *in_file;
     char sbuf[256];
@@ -155,8 +152,6 @@ PGM_IMG read_pgm(const char *path) {
 
     return result;
 }
-
-#pragma clang diagnostic pop
 
 void write_pgm(PGM_IMG img, const char *path) {
     FILE *out_file;
