@@ -131,7 +131,6 @@ HSL_IMG rgb2hsl(PPM_IMG img_in) {
                     H = (2.0f / 3.0f) + del_g - del_r;
                 }
             }
-
         }
 
         if (H < 0)
@@ -147,13 +146,13 @@ HSL_IMG rgb2hsl(PPM_IMG img_in) {
     return img_out;
 }
 
-float Hue_2_RGB(float v1, float v2, float vH)             //Function Hue_2_RGB
+float Hue_2_RGB(float v1, float v0, float vh)             //Function Hue_2_RGB
 {
-    if (vH < 0) vH += 1;
-    if (vH > 1) vH -= 1;
-    if ((6 * vH) < 1) return (v1 + (v2 - v1) * 6 * vH);
-    if ((2 * vH) < 1) return (v2);
-    if ((3 * vH) < 2) return (v1 + (v2 - v1) * ((2.0f / 3.0f) - vH) * 6);
+    if (vh < 0) vh += 1;
+    if (vh > 1) vh -= 1;
+    if ((6 * vh) < 1) return (v1 + (v0 - v1) * 6 * vh);
+    if ((2 * vh) < 1) return (v0);
+    if ((3 * vh) < 2) return (v1 + (v0 - v1) * ((2.0f / 3.0f) - vh) * 6);
     return (v1);
 }
 

@@ -120,6 +120,172 @@ void process_ppm(PPM_IMG &in_ppm) {
     //   Take end time for YUV operation and display duration.
     //   Write resulting PPM_IMG to disk as "out.yuv.ppm".
     // Take end time and display total duration.
+    std::cout << "Processing PPM Image File." << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+    process_as_hsl(in_ppm);
+    process_as_yuv(in_ppm);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "Took " << duration << " to process PPM file." << std::endl;
+}
+
+void process_as_hsl(PPM_IMG &ppm) {
+    // Take start time for HSL operation.
+    // Create HSL_IMG from input image.
+    // Calculate histogram on L.
+    // Equalise L.
+    // Convert HSL_IMG to PPM_IMG.
+    // Take end time for HSL operation and display duration.
+    // Write resulting PPM_IMG to disk as "out.hsl.ppm".
+    std::cout << "Processing PPM Image as HSL." << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+    auto hsl = ppm_to_hsl(ppm);
+    int histogram[VALUE_COUNT];
+    int cumulative[VALUE_COUNT];
+    unsigned char lookup[VALUE_COUNT];
+    auto size = hsl.height * hsl.width;
+    int min = 0;
+    int d = 0;
+    auto equalised_l = new unsigned char[size];
+#pragma omp parallel default(none) shared(hsl, ppm, histogram, cumulative, lookup, size, min, d, equalised_l)
+    {
+#pragma omp for
+        for (auto i = 0; i < VALUE_COUNT; i++) {
+            histogram[i] = 0;
+            cumulative[i] = 0;
+            lookup[i] = 0;
+        }
+#pragma omp for reduction(+:histogram)
+        for (auto i = 0; i < size; i++) {
+            histogram[hsl.l[i]]++;
+        }
+#pragma omp single nowait
+        {
+            cumulative[0] = histogram[0];
+            for (auto i = 1; i < VALUE_COUNT; i++) {
+                cumulative[i] = cumulative[i - 1] + histogram[i];
+            }
+        }
+#pragma omp single
+        {
+            auto i = 0;
+            do {
+                min = histogram[i];
+                i++;
+            } while (min == 0);
+            d = size - min;
+        }
+#pragma omp for
+        for (auto i = 0; i < VALUE_COUNT; i++) {
+            auto v = (int) std::round(((double) cumulative[i] - min) * MAX_VALUE / d);
+            lookup[i] = std::clamp(v, MIN_VALUE, MAX_VALUE);
+        }
+#pragma omp for
+        for (auto i = 0; i < size; i++) {
+            equalised_l[i] = lookup[hsl.l[i]];
+        }
+    }
+    hsl.l = equalised_l;
+    auto result = hsl_to_ppm(hsl);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "Took " << duration << " to process PPM as HSL." << std::endl;
+    write_ppm(result, "out.hsl.ppm");
+    free_ppm(result);
+    free(hsl.h);
+    free(hsl.s);
+    free(hsl.l);
+}
+
+HSL_IMG ppm_to_hsl(PPM_IMG &ppm) {
+    HSL_IMG hsl;
+    hsl.width = ppm.w;
+    hsl.height = ppm.h;
+    auto size = hsl.width * hsl.height;
+    hsl.h = new float[size];
+    hsl.s = new float[size];
+    hsl.l = new unsigned char[size];
+    float h, s, l;
+#pragma omp parallel for default(none) shared(size, hsl, ppm) private(h, s, l)
+    for (auto i = 0; i < size; i++) {
+        auto r = float(ppm.img_r[i]) / MAX_VALUE;
+        auto g = float(ppm.img_g[i]) / MAX_VALUE;
+        auto b = float(ppm.img_b[i]) / MAX_VALUE;
+        auto min = std::min(std::min(r, g), b);
+        auto max = std::max(std::max(r, g), b);
+        auto delta = max - min;
+        l = (max + min) / 2;
+        if (delta == 0) {
+            h = 0;
+            s = 0;
+        } else {
+            s = l < 0.5 ? delta / (max + min) : delta / (2 - max - min);
+            auto delta_r = ((max - r) / 6 + (delta / 2)) / delta;
+            auto delta_g = ((max - g) / 6 + (delta / 2)) / delta;
+            auto delta_b = ((max - b) / 6 + (delta / 2)) / delta;
+            if (r == max) {
+                h = delta_b - delta_g;
+            } else {
+                h = g == max ? 1.0f / 3.0f + delta_r - delta_b : 2.0f / 3.0f + delta_g - delta_r;
+            }
+        }
+
+        if (h < 0)h += 1;
+        if (h > 1)h -= 1;
+
+        hsl.h[i] = h;
+        hsl.s[i] = s;
+        hsl.l[i] = (unsigned char) (l * 255);
+    }
+
+    return hsl;
+}
+
+PPM_IMG hsl_to_ppm(HSL_IMG &hsl) {
+    PPM_IMG ppm;
+    ppm.w = hsl.width;
+    ppm.h = hsl.height;
+    auto size = ppm.w * ppm.h;
+    ppm.img_r = new unsigned char[size];
+    ppm.img_g = new unsigned char[size];
+    ppm.img_b = new unsigned char[size];
+    float h, s, l;
+#pragma omp parallel for default(none) shared(ppm, hsl, size) private(h, s, l)
+    for (auto i = 0; i < size; i++) {
+        h = hsl.h[i];
+        s = hsl.s[i];
+        l = (float) hsl.l[i] / 255.0f;
+        if (s == 0) {
+            auto x = (unsigned char) (l * 255);
+            ppm.img_r[i] = x;
+            ppm.img_g[i] = x;
+            ppm.img_b[i] = x;
+        } else {
+            auto v0 = l < 0.5 ? l * (1 + s) : (l + s) - (s * l);
+            auto v1 = 2 * l - v0;
+            ppm.img_r[i] = (unsigned char) (255 * hue_to_rgb(v0, v1, h + 1.0f / 3.0f));
+            ppm.img_g[i] = (unsigned char) (255 * hue_to_rgb(v0, v1, h));
+            ppm.img_b[i] = (unsigned char) (255 * hue_to_rgb(v0, v1, h - 1.0f / 3.0f));
+        }
+    }
+    return ppm;
+}
+
+float hue_to_rgb(float v0, float v1, float vh) {
+    if (vh < 0)vh += 1;
+    if (vh > 1)vh -= 1;
+    if ((6 * vh) < 1)return v1 + (v0 - v1) * 6 * vh;
+    if ((2 * vh) < 1)return v0;
+    if ((3 * vh) < 2)return v1 + (v0 - v1) * (2.0f / 3.0f - vh) * 6;
+    return v1;
+}
+
+void process_as_yuv(PPM_IMG &ppm) {
+
+}
+
+YUV_IMG ppm_to_yuv(PPM_IMG &ppm) {
+
 }
 
 PPM_IMG read_ppm(const char *path) {
