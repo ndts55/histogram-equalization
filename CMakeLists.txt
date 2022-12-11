@@ -5,6 +5,7 @@ project(
   VERSION 1.0
   LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 23)
 
 find_package(MPI)
 
@@ -20,8 +21,8 @@ include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 add_executable(contrast contrast-enhancement.cpp histogram-equalization.cpp  contrast.cpp)
 target_link_libraries(contrast ${MPI_C_LIBRARIES})
 
-add_executable(contrast-mpi contrast-enhancement.cpp histogram-equalization.cpp  contrast-mpi.cpp imageio.h)
+add_executable(contrast-mpi contrast-enhancement.cpp histogram-equalization.cpp  contrast-mpi.cpp omp-image-processing.h)
 target_link_libraries(contrast ${MPI_C_LIBRARIES})
 
-add_executable(contrast-mpi-openmp contrast-enhancement.cpp histogram-equalization.cpp  contrast-mpi-openmp.cpp imageio.h)
+add_executable(contrast-mpi-openmp contrast-enhancement.cpp histogram-equalization.cpp  contrast-mpi-openmp.cpp)
 target_link_libraries(contrast ${MPI_C_LIBRARIES})

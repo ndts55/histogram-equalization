@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <iostream>
 #include "hist-equ.h"
 
 PGM_IMG contrast_enhancement_g(PGM_IMG img_in) {

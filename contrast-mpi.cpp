@@ -1,5 +1,5 @@
 #include <iostream>
-#include "imageio.h"
+#include "omp-image-processing.h"
 
 using namespace std;
 
