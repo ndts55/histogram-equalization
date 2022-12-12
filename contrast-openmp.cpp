@@ -96,6 +96,7 @@ void process_pgm(PGM_IMG &in_pgm) {
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "Took " << duration << " to process PGM file." << std::endl;
+    std::cout << "Writing resulting pgm file to out.pgm." << std::endl;
     write_pgm(out_pgm, "out.pgm");
     free(out_pgm.img);
 }
@@ -190,6 +191,7 @@ void process_as_hsl(PPM_IMG &ppm) {
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "Took " << duration << " to process PPM as HSL." << std::endl;
+    std::cout << "Writing resulting ppm to out.hsl.ppm." << std::endl;
     write_ppm(result, "out.hsl.ppm");
     delete[] result.img_r;
     delete[] result.img_g;
@@ -343,6 +345,7 @@ void process_as_yuv(PPM_IMG &ppm) {
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "Took " << duration << " to process PPM as YUV." << std::endl;
+    std::cout << "Writing resulting ppm to out.yuv.ppm." << std::endl;
     write_ppm(result, "out.yuv.ppm");
     delete[] result.img_r;
     delete[] result.img_g;
