@@ -24,5 +24,5 @@ target_link_libraries(contrast ${MPI_C_LIBRARIES})
 add_executable(contrast-mpi contrast-enhancement.cpp histogram-equalization.cpp  contrast-mpi.cpp omp-image-processing.h)
 target_link_libraries(contrast ${MPI_C_LIBRARIES})
 
-add_executable(contrast-mpi-openmp contrast-enhancement.cpp histogram-equalization.cpp  contrast-mpi-openmp.cpp)
+add_executable(contrast-mpi-openmp contrast-mpi-openmp.cpp)
 target_link_libraries(contrast ${MPI_C_LIBRARIES})

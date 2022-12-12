@@ -191,10 +191,12 @@ void process_as_hsl(PPM_IMG &ppm) {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "Took " << duration << " to process PPM as HSL." << std::endl;
     write_ppm(result, "out.hsl.ppm");
-    free_ppm(result);
-    free(hsl.h);
-    free(hsl.s);
-    free(hsl.l);
+    delete[] result.img_r;
+    delete[] result.img_g;
+    delete[] result.img_b;
+    delete[] hsl.h;
+    delete[] hsl.s;
+    delete[] hsl.l;
 }
 
 HSL_IMG ppm_to_hsl(PPM_IMG &ppm) {
@@ -281,11 +283,116 @@ float hue_to_rgb(float v0, float v1, float vh) {
 }
 
 void process_as_yuv(PPM_IMG &ppm) {
-
+    // Take start time for YUV operation.
+    // Create YUV_IMG from input image.
+    // Calculate histogram on Y.
+    // Equalise Y.
+    // Convert YUV_IMG to PPM_IMG.
+    // Take end time for YUV operation and display duration.
+    // Write resulting PPM_IMG to disk as "out.yuv.ppm".
+    std::cout << "Processing Image File as YUV." << std::endl;
+    auto start_time = std::chrono::high_resolution_clock::now();
+    auto yuv = ppm_to_yuv(ppm);
+    int histogram[VALUE_COUNT];
+    int cumulative[VALUE_COUNT];
+    unsigned char lookup[VALUE_COUNT];
+    auto size = yuv.w * yuv.h;
+    int min = 0;
+    int d = 0;
+    auto equalised_y = new unsigned char[size];
+#pragma omp parallel default(none) shared(yuv, ppm, histogram, cumulative, lookup, size, min, d, equalised_y)
+    {
+#pragma omp for
+        for (auto i = 0; i < VALUE_COUNT; i++) {
+            histogram[i] = 0;
+            cumulative[i] = 0;
+            lookup[i] = 0;
+        }
+#pragma omp for reduction(+:histogram)
+        for (auto i = 0; i < size; i++) {
+            histogram[yuv.img_y[i]]++;
+        }
+#pragma omp single nowait
+        {
+            cumulative[0] = histogram[0];
+            for (auto i = 1; i < VALUE_COUNT; i++) {
+                cumulative[i] = cumulative[i - 1] + histogram[i];
+            }
+        }
+#pragma omp single
+        {
+            auto i = 0;
+            do {
+                min = histogram[i];
+                i++;
+            } while (min == 0);
+            d = size - min;
+        }
+#pragma omp for
+        for (auto i = 0; i < VALUE_COUNT; i++) {
+            auto v = (int) std::round(((double) cumulative[i] - min) * MAX_VALUE / d);
+            lookup[i] = std::clamp(v, MIN_VALUE, MAX_VALUE);
+        }
+#pragma omp for
+        for (auto i = 0; i < size; i++) {
+            equalised_y[i] = lookup[yuv.img_y[i]];
+        }
+    }
+    yuv.img_y = equalised_y;
+    auto result = yuv_to_ppm(yuv);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "Took " << duration << " to process PPM as YUV." << std::endl;
+    write_ppm(result, "out.yuv.ppm");
+    delete[] result.img_r;
+    delete[] result.img_g;
+    delete[] result.img_b;
+    delete[] yuv.img_y;
+    delete[] yuv.img_u;
+    delete[] yuv.img_v;
 }
 
 YUV_IMG ppm_to_yuv(PPM_IMG &ppm) {
+    YUV_IMG yuv;
+    yuv.h = ppm.h;
+    yuv.w = ppm.w;
+    auto size = yuv.h * yuv.w;
+    yuv.img_y = new unsigned char[size];
+    yuv.img_u = new unsigned char[size];
+    yuv.img_v = new unsigned char[size];
+    unsigned char r, g, b;
+#pragma omp parallel for default(none) shared(yuv, ppm, size) private(r, g, b)
+    for (auto i = 0; i < size; i++) {
+        r = ppm.img_r[i];
+        g = ppm.img_g[i];
+        b = ppm.img_b[i];
+        yuv.img_y[i] = (unsigned char) (0.299 * r + 0.587 * g + 0.114 * b);
+        yuv.img_u[i] = (unsigned char) (-0.169 * r - 0.331 * g + 0.499 * b + 128);
+        yuv.img_v[i] = (unsigned char) (0.499 * r - 0.418 * g - 0.0813 * b + 128);
+    }
+    return yuv;
+}
 
+PPM_IMG yuv_to_ppm(YUV_IMG &yuv) {
+    PPM_IMG ppm;
+    ppm.w = yuv.w;
+    ppm.h = yuv.h;
+    auto size = ppm.w * ppm.h;
+    ppm.img_r = new unsigned char[size];
+    ppm.img_g = new unsigned char[size];
+    ppm.img_b = new unsigned char[size];
+    int y, cb, cr;
+#pragma omp parallel for default(none) shared(yuv, ppm, size) private(y, cb, cr)
+    for (auto i = 0; i < size; i++) {
+        y = yuv.img_y[i];
+        cb = yuv.img_u[i] - 128;
+        cr = yuv.img_v[i] - 128;
+        ppm.img_r[i] = (unsigned char) std::clamp((int) (y + 1.402 * cr), MIN_VALUE, MAX_VALUE);
+        ppm.img_g[i] = (unsigned char) std::clamp((int) (y - 0.344 * cb - 0.714 * cr), MIN_VALUE, MAX_VALUE);
+        ppm.img_b[i] = (unsigned char) std::clamp((int) (y + 1.772 * cb), MIN_VALUE, MAX_VALUE);
+    }
+
+    return ppm;
 }
 
 PPM_IMG read_ppm(const char *path) {
