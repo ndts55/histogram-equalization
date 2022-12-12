@@ -26,3 +26,6 @@ target_link_libraries(contrast-mpi ${MPI_C_LIBRARIES})
 
 add_executable(contrast-mpi-openmp contrast-mpi-openmp.cpp)
 target_link_libraries(contrast-mpi-openmp ${MPI_C_LIBRARIES})
+
+add_executable(contrast-openmp contrast-openmp.cpp)
+target_link_libraries(contrast-openmp ${MPI_C_LIBRARIES})
