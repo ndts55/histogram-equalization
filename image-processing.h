@@ -1,6 +1,6 @@
-#include "hist-equ.h"
-
 #pragma once
+
+#include "hist-equ.h"
 
 void process_pgm(PGM_IMG &pgm);
 

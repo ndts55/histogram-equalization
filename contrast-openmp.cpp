@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include "hist-equ.h"
-#include "omp-image-processing.h"
+#include "image-processing.h"
 #include "omp.h"
 
 #define VALUE_COUNT 256
@@ -11,7 +11,7 @@
 #define MIN_VALUE 0
 
 int main() {
-    std::cout << "Contrast MPI" << std::endl;
+    std::cout << "Contrast OpenMP" << std::endl;
 
     auto in_pgm = read_pgm("in.pgm");
     process_pgm(in_pgm);
