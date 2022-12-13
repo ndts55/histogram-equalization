@@ -7,25 +7,27 @@ project(
 
 set(CMAKE_CXX_STANDARD 23)
 
-find_package(MPI)
-
-find_package(OpenMP)
-if (OPENMP_FOUND)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-endif ()
-
+find_package(MPI REQUIRED)
 include_directories(SYSTEM ${MPI_INCLUDE_PATH})
+
+find_package(OpenMP REQUIRED)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 
 add_executable(contrast contrast-enhancement.cpp histogram-equalization.cpp contrast.cpp)
 target_link_libraries(contrast ${MPI_C_LIBRARIES})
 
 add_executable(contrast-mpi contrast-mpi.cpp)
-target_link_libraries(contrast-mpi ${MPI_C_LIBRARIES})
+target_link_libraries(contrast-mpi PUBLIC MPI::MPI_CXX)
+
+add_executable(contrast-mpi-x contrast-mpi-x.cpp)
+target_link_libraries(contrast-mpi PUBLIC MPI::MPI_CXX)
 
 add_executable(contrast-mpi-openmp contrast-mpi-openmp.cpp)
 target_link_libraries(contrast-mpi-openmp ${MPI_C_LIBRARIES})
 
 add_executable(contrast-openmp contrast-openmp.cpp)
-target_link_libraries(contrast-openmp ${MPI_C_LIBRARIES})
+
+#add_executable(mpi-hello mpi-hello.cpp)
+#target_link_libraries(mpi-hello PUBLIC MPI::MPI_CXX)
