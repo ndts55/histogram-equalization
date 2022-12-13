@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include "hist-equ.h"
-#include "image-processing.h"
+#include "omp-image-processing.h"
 #include "omp.h"
 
 #define VALUE_COUNT 256
