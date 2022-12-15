@@ -16,7 +16,7 @@ int main(int argc, char *argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     if (rank == 0)printf("Contrast MPI\n");
     process_pgm(rank, world_size);
-    process_ppm(rank, world_size);
+//    process_ppm(rank, world_size);
     MPI_Finalize();
 }
 
@@ -48,36 +48,33 @@ void process_pgm(int rank, int world_size) {
     auto img_chunk_size = img_size / world_size;
     int img_chunk_offsets[world_size];
     int img_chunk_lengths[world_size];
-    printf("A %d\n", rank);
     for (auto i = 0; i < world_size; i++) {
         img_chunk_offsets[i] = i * img_chunk_size;
         img_chunk_lengths[i] = img_chunk_size;
     }
     img_chunk_lengths[world_size - 1] += img_size % world_size;
-    printf("B %d\n", rank);
 
     // Scatterv image data.
-    printf("r%d img-chunk-size: %d\n", rank, img_chunk_lengths[rank]);
-    auto x = img_chunk_lengths[rank];
-    auto y = img_chunk_offsets[rank];
-    printf("%d x: %d\n", rank, x);
-    printf("%d y: %d\n", rank, y);
-    unsigned char partial_img[img_chunk_lengths[rank]];
-    MPI_Scatterv(&(pgm.img),
-                 img_chunk_lengths,
-                 img_chunk_offsets,
-                 MPI_UNSIGNED_CHAR,
-                 &partial_img,
-                 img_chunk_lengths[rank],
-                 MPI_UNSIGNED_CHAR,
-                 0,
-                 MPI_COMM_WORLD);
+    auto chunk_length = img_chunk_lengths[rank];
+    auto chunk_offset = img_chunk_offsets[rank];
+    auto partial_img = new unsigned char[chunk_length];
+    MPI_Scatterv(
+            &pgm.img[0],
+            &img_chunk_lengths[0],
+            &img_chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &partial_img[0],
+            img_chunk_lengths[rank],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
 
     // Calculate partial histogram.
     int partial_histogram[VALUE_COUNT];
     for (int &i: partial_histogram) i = 0;
-    for (const auto &item: partial_img) {
-        partial_histogram[item]++;
+    for (auto i = 0; i < chunk_length; i++) {
+        partial_histogram[partial_img[i]]++;
     }
 
     // Allreduce to complete histogram.
@@ -166,21 +163,21 @@ void process_pgm(int rank, int world_size) {
     }
 }
 
-void process_ppm(int rank, int world_size) {}
-
-void process_as_hsl(PPM_IMG &ppm) {}
-
-HSL_IMG ppm_to_hsl(PPM_IMG &ppm) {}
-
-PPM_IMG hsl_to_ppm(HSL_IMG &hsl) {}
-
-float hue_to_rgb(float v0, float v1, float vh) {}
-
-YUV_IMG ppm_to_yuv(PPM_IMG &ppm) {}
-
-PPM_IMG yuv_to_ppm(YUV_IMG &yuv) {}
-
-void process_as_yuv(PPM_IMG &ppm) {}
+//void process_ppm(int rank, int world_size) {}
+//
+//void process_as_hsl(PPM_IMG &ppm) {}
+//
+//HSL_IMG ppm_to_hsl(PPM_IMG &ppm) {}
+//
+//PPM_IMG hsl_to_ppm(HSL_IMG &hsl) {}
+//
+//float hue_to_rgb(float v0, float v1, float vh) {}
+//
+//YUV_IMG ppm_to_yuv(PPM_IMG &ppm) {}
+//
+//PPM_IMG yuv_to_ppm(YUV_IMG &yuv) {}
+//
+//void process_as_yuv(PPM_IMG &ppm) {}
 
 PPM_IMG read_ppm(const char *path) {
     FILE *in_file;
