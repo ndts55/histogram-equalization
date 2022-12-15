@@ -9,13 +9,22 @@
 #define MIN_VALUE 0
 
 int main(int argc, char *argv[]) {
+    int r;
     int world_size;
     int rank;
-    MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    process_pgm(rank, world_size);
-    MPI_Finalize();
+    r = MPI_Init(&argc, &argv);
+    if (r != 0)return r;
+    r = MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    if (r != 0)return r;
+    r = MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if (r != 0)return r;
+    r = process_pgm(rank, world_size);
+    if (r != 0)return r;
+    r = process_ppm(rank, world_size);
+    if (r != 0)return r;
+    r = MPI_Finalize();
+    if (r != 0)return r;
+    return 0;
 }
 
 template<typename T>
@@ -23,13 +32,16 @@ void log(int rank, T t) {
     printf("%d\t%s\n", rank, std::to_string(t).c_str());
 }
 
-void process_pgm(int rank, int world_size) {
+int process_pgm(int rank, int world_size) {
+    int r;
     PGM_IMG pgm;
     if (rank == 0) pgm = read_pgm("in.pgm");
 
     // Broadcast image dimensions.
-    MPI_Bcast(&pgm.w, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&pgm.h, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    r = MPI_Bcast(&pgm.w, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    if (r != 0)return r;
+    r = MPI_Bcast(&pgm.h, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    if (r != 0)return r;
 
     // Calculate ranges in image data for each process.
     auto img_size = pgm.w * pgm.h;
@@ -44,7 +56,7 @@ void process_pgm(int rank, int world_size) {
     auto img_chunk_length = img_chunk_lengths[rank];
 //    log(rank, chunk_offset);
     auto partial_img = new unsigned char[img_chunk_length];
-    MPI_Scatterv(
+    r = MPI_Scatterv(
             &pgm.img[0],
             &img_chunk_lengths[0],
             &img_chunk_offsets[0],
@@ -55,7 +67,7 @@ void process_pgm(int rank, int world_size) {
             0,
             MPI_COMM_WORLD
     );
-//    log(rank, partial_img[0]);
+    if (r != 0)return r;
     // Calculate partial histogram.
     auto partial_histogram = new int[VALUE_COUNT];
     for (auto i = 0; i < VALUE_COUNT; i++)partial_histogram[i] = 0;
@@ -65,7 +77,7 @@ void process_pgm(int rank, int world_size) {
 
     // Allreduce to complete histogram.
     auto histogram = new int[VALUE_COUNT];
-    MPI_Allreduce(
+    r = MPI_Allreduce(
             &partial_histogram[0],
             &histogram[0],
             VALUE_COUNT,
@@ -73,7 +85,7 @@ void process_pgm(int rank, int world_size) {
             MPI_SUM,
             MPI_COMM_WORLD
     );
-//    log(rank, histogram[110]);
+    if (r != 0)return r;
 
     // Calculate cumulative.
     auto cumulative = new int[VALUE_COUNT];
@@ -81,7 +93,6 @@ void process_pgm(int rank, int world_size) {
         cumulative[0] = histogram[0];
         for (auto i = 1; i < VALUE_COUNT; i++)cumulative[i] = cumulative[i - 1] + histogram[i];
     }
-//    log(rank, cumulative[200]);
 
     // Find the first non-zero value in complete histogram.
     int min;
@@ -105,8 +116,7 @@ void process_pgm(int rank, int world_size) {
     vc_chunk_lengths[world_size - 1] += VALUE_COUNT % world_size;
     auto vc_chunk_length = vc_chunk_lengths[rank];
     auto partial_cumulative = new int[vc_chunk_length];
-//    log(rank, vc_chunk_length);
-    MPI_Scatterv(
+    r = MPI_Scatterv(
             &cumulative[0],
             &vc_chunk_lengths[0],
             &vc_chunk_offsets[0],
@@ -117,14 +127,14 @@ void process_pgm(int rank, int world_size) {
             0,
             MPI_COMM_WORLD
     );
-//    log(rank, partial_cumulative[0]);
+    if (r != 0)return r;
     auto partial_lookup = new int[vc_chunk_length];
     for (auto i = 0; i < vc_chunk_length; i++) {
         auto v = (int) std::round(((double) partial_cumulative[i] - min) * MAX_VALUE / d);
         partial_lookup[i] = std::clamp(v, MIN_VALUE, MAX_VALUE);
     }
     auto lookup = new int[VALUE_COUNT];
-    MPI_Allgatherv(
+    r = MPI_Allgatherv(
             &partial_lookup[0],
             vc_chunk_length,
             MPI_INT,
@@ -134,34 +144,32 @@ void process_pgm(int rank, int world_size) {
             MPI_INT,
             MPI_COMM_WORLD
     );
-//    log(rank, lookup[100]);
+    if (r != 0) return r;
 
     // Equalise the partial image data.
     auto partial_equalised = new unsigned char[img_chunk_length];
     for (auto i = 0; i < img_chunk_length; i++) {
         partial_equalised[i] = lookup[partial_img[i]];
     }
-    log(rank, partial_equalised[6]);
 
     // Gatherv partial equalised image data into full image.
     auto equalised = new unsigned char[img_size];
-    // TODO This Call leads to a Segfault, probably because recvcounts and displs need to be different somehow. Fix that.
-    MPI_Gatherv(
+    r = MPI_Gatherv(
             &partial_equalised[0],
             img_chunk_length,
             MPI_UNSIGNED_CHAR,
             &equalised[0],
-            img_chunk_lengths,
-            img_chunk_offsets,
+            &img_chunk_lengths[0],
+            &img_chunk_offsets[0],
             MPI_UNSIGNED_CHAR,
             0,
             MPI_COMM_WORLD
     );
+    if (r != 0)return r;
 
     if (rank == 0) {
         pgm.img = equalised;
         write_pgm(pgm, "out.mpi.pgm");
-        free_pgm(pgm);
     }
     delete[] partial_img;
     delete[] partial_histogram;
@@ -172,6 +180,11 @@ void process_pgm(int rank, int world_size) {
     delete[] equalised;
     delete[] lookup;
     delete[] cumulative;
+    return 0;
+}
+
+int process_ppm(int rank, int world_size) {
+    return 0;
 }
 
 PPM_IMG read_ppm(const char *path) {

@@ -2,11 +2,11 @@
 
 #include "hist-equ.h"
 
-void process_pgm(int rank, int world_size);
+int process_pgm(int rank, int world_size);
 
-void process_ppm(int rank, int world_size);
+int process_ppm(int rank, int world_size);
 
-void process_as_hsl(PPM_IMG &ppm);
+int process_as_hsl(PPM_IMG &ppm);
 
 HSL_IMG ppm_to_hsl(PPM_IMG &ppm);
 
@@ -18,4 +18,4 @@ YUV_IMG ppm_to_yuv(PPM_IMG &ppm);
 
 PPM_IMG yuv_to_ppm(YUV_IMG &yuv);
 
-void process_as_yuv(PPM_IMG &ppm);
+int process_as_yuv(PPM_IMG &ppm);
