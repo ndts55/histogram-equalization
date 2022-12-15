@@ -34,8 +34,8 @@ void process_pgm(int rank, int world_size) {
     // Calculate ranges in image data for each process.
     auto img_size = pgm.w * pgm.h;
     auto img_chunk_size = img_size / world_size;
-    auto *img_chunk_offsets = new int[world_size];
-    auto *img_chunk_lengths = new int[world_size];
+    auto img_chunk_offsets = new int[world_size];
+    auto img_chunk_lengths = new int[world_size];
     for (auto i = 0; i < world_size; i++) {
         img_chunk_offsets[i] = i * img_chunk_size;
         img_chunk_lengths[i] = img_chunk_size;
@@ -43,7 +43,7 @@ void process_pgm(int rank, int world_size) {
     img_chunk_lengths[world_size - 1] += img_size % world_size;
     auto img_chunk_length = img_chunk_lengths[rank];
 //    log(rank, chunk_offset);
-    auto *partial_img = new unsigned char[img_chunk_length];
+    auto partial_img = new unsigned char[img_chunk_length];
     MPI_Scatterv(
             &pgm.img[0],
             &img_chunk_lengths[0],
@@ -57,14 +57,14 @@ void process_pgm(int rank, int world_size) {
     );
 //    log(rank, partial_img[0]);
     // Calculate partial histogram.
-    auto *partial_histogram = new int[VALUE_COUNT];
+    auto partial_histogram = new int[VALUE_COUNT];
     for (auto i = 0; i < VALUE_COUNT; i++)partial_histogram[i] = 0;
     for (auto i = 0; i < img_chunk_length; i++) {
         partial_histogram[partial_img[i]]++;
     }
 
     // Allreduce to complete histogram.
-    auto *histogram = new int[VALUE_COUNT];
+    auto histogram = new int[VALUE_COUNT];
     MPI_Allreduce(
             &partial_histogram[0],
             &histogram[0],
@@ -76,7 +76,7 @@ void process_pgm(int rank, int world_size) {
 //    log(rank, histogram[110]);
 
     // Calculate cumulative.
-    auto *cumulative = new int[VALUE_COUNT];
+    auto cumulative = new int[VALUE_COUNT];
     if (rank == 0) {
         cumulative[0] = histogram[0];
         for (auto i = 1; i < VALUE_COUNT; i++)cumulative[i] = cumulative[i - 1] + histogram[i];
@@ -95,8 +95,8 @@ void process_pgm(int rank, int world_size) {
     auto d = img_size - min;
 
     // Calculate partial lookup table in scattered range [0, 255].
-    auto *vc_chunk_offsets = new int[world_size];
-    auto *vc_chunk_lengths = new int[world_size];
+    auto vc_chunk_offsets = new int[world_size];
+    auto vc_chunk_lengths = new int[world_size];
     auto vc_chunk_size = VALUE_COUNT / world_size;
     for (auto i = 0; i < world_size; i++) {
         vc_chunk_offsets[i] = i * vc_chunk_size;
@@ -104,7 +104,7 @@ void process_pgm(int rank, int world_size) {
     }
     vc_chunk_lengths[world_size - 1] += VALUE_COUNT % world_size;
     auto vc_chunk_length = vc_chunk_lengths[rank];
-    auto *partial_cumulative = new int[vc_chunk_length];
+    auto partial_cumulative = new int[vc_chunk_length];
 //    log(rank, vc_chunk_length);
     MPI_Scatterv(
             &cumulative[0],
@@ -118,12 +118,12 @@ void process_pgm(int rank, int world_size) {
             MPI_COMM_WORLD
     );
 //    log(rank, partial_cumulative[0]);
-    auto *partial_lookup = new int[vc_chunk_length];
+    auto partial_lookup = new int[vc_chunk_length];
     for (auto i = 0; i < vc_chunk_length; i++) {
         auto v = (int) std::round(((double) partial_cumulative[i] - min) * MAX_VALUE / d);
         partial_lookup[i] = std::clamp(v, MIN_VALUE, MAX_VALUE);
     }
-    auto *lookup = new int[VALUE_COUNT];
+    auto lookup = new int[VALUE_COUNT];
     MPI_Allgatherv(
             &partial_lookup[0],
             vc_chunk_length,
@@ -137,22 +137,22 @@ void process_pgm(int rank, int world_size) {
 //    log(rank, lookup[100]);
 
     // Equalise the partial image data.
-    auto *partial_equalised = new unsigned char[img_chunk_length];
+    auto partial_equalised = new unsigned char[img_chunk_length];
     for (auto i = 0; i < img_chunk_length; i++) {
         partial_equalised[i] = lookup[partial_img[i]];
     }
-//    log(rank, partial_equalised[6]);
+    log(rank, partial_equalised[6]);
 
     // Gatherv partial equalised image data into full image.
-    auto *equalised = new unsigned char[img_size];
+    auto equalised = new unsigned char[img_size];
     // TODO This Call leads to a Segfault, probably because recvcounts and displs need to be different somehow. Fix that.
     MPI_Gatherv(
             &partial_equalised[0],
             img_chunk_length,
             MPI_UNSIGNED_CHAR,
             &equalised[0],
-            &img_chunk_lengths[0],
-            &img_chunk_offsets[0],
+            img_chunk_lengths,
+            img_chunk_offsets,
             MPI_UNSIGNED_CHAR,
             0,
             MPI_COMM_WORLD
