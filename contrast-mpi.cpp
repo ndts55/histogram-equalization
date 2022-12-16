@@ -191,7 +191,7 @@ int process_pgm(int rank, int world_size) {
         pgm.img = equalised;
         auto end_time = MPI_Wtime();
         auto duration = end_time - start_time;
-        printf("Took %f to process PGM file.\n", duration);
+        printf("Took %fms to process PGM file.\n", duration * 1000);
         write_pgm(pgm, "out.mpi.pgm");
     }
     delete[] equalised;
@@ -216,7 +216,7 @@ int process_ppm(int rank, int world_size) {
     if (rank == 0) {
         auto end_time = MPI_Wtime();
         auto duration = end_time - start_time;
-        printf("Took %f to process PPM file.\n", duration);
+        printf("Took %fms to process PPM file.\n", duration * 1000);
     }
 
     return 0;
@@ -243,7 +243,7 @@ int process_as_hsl(int rank, int world_size, PPM_IMG &ppm) {
         write_ppm(o_ppm, "out.hsl.mpi.ppm");
         auto end_time = MPI_Wtime();
         auto duration = end_time - start_time;
-        printf("Took %f to process PPM file as HSL.\n", duration);
+        printf("Took %fms to process PPM file as HSL.\n", duration * 1000);
     }
     delete[] equalised;
     return 0;
@@ -523,7 +523,7 @@ int process_as_yuv(int rank, int world_size, PPM_IMG &ppm) {
         write_ppm(o_ppm, "out.yuv.mpi.ppm");
         auto end_time = MPI_Wtime();
         auto duration = end_time - start_time;
-        printf("Took %f to process PPM file as YUV.\n", duration);
+        printf("Took %fms to process PPM file as YUV.\n", duration * 1000);
     }
     delete[] equalised;
     return 0;
@@ -766,7 +766,6 @@ PPM_IMG read_ppm(const char *path) {
     fscanf(in_file, "%d", &result.w);
     fscanf(in_file, "%d", &result.h);
     fscanf(in_file, "%d\n", &v_max);
-    printf("Image size: %d x %d\n", result.w, result.h);
 
 
     result.img_r = (unsigned char *) malloc(result.w * result.h * sizeof(unsigned char));
