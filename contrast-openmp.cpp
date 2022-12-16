@@ -27,10 +27,10 @@ void process_pgm(PGM_IMG &in_pgm) {
     // Calculate histogram array.
     // Calculate cdf array.
     // Calculate min and d.
-    // Calculate mapping from input values to equalised values.
-    // Map input image to equalised image.
+    // Calculate mapping from input values to process_array values.
+    // Map input image to process_array image.
     // Take end time and display duration.
-    // Write equalised image to disk.
+    // Write process_array image to disk.
     std::cout << "Processing PGM Image File." << std::endl;
     auto start_time = std::chrono::high_resolution_clock::now();
     auto img_size = in_pgm.w * in_pgm.h;
@@ -86,7 +86,7 @@ void process_pgm(PGM_IMG &in_pgm) {
             auto v = (int) std::round(((double) cumulative[i] - min) * MAX_VALUE / d);
             lookup[i] = std::clamp(v, MIN_VALUE, MAX_VALUE);
         }
-        // Finally, map the input image to the equalised output image.
+        // Finally, map the input image to the process_array output image.
 #pragma omp for
         for (auto i = 0; i < img_size; i++) {
             out_pgm.img[i] = lookup[in_pgm.img[i]];
@@ -215,8 +215,8 @@ HSL_IMG ppm_to_hsl(PPM_IMG &ppm) {
         auto r = float(ppm.img_r[i]) / MAX_VALUE;
         auto g = float(ppm.img_g[i]) / MAX_VALUE;
         auto b = float(ppm.img_b[i]) / MAX_VALUE;
-        auto min = std::min(std::min(r, g), b);
-        auto max = std::max(std::max(r, g), b);
+        auto min = std::min({r, g, b});
+        auto max = std::max({r, g, b});
         auto delta = max - min;
         l = (max + min) / 2;
         if (delta == 0) {

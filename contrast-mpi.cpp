@@ -32,32 +32,36 @@ void log(int rank, T t) {
     printf("%d\t%s\n", rank, std::to_string(t).c_str());
 }
 
-int process_pgm(int rank, int world_size) {
-    int r;
-    PGM_IMG pgm;
-    if (rank == 0) pgm = read_pgm("in.pgm");
+void construct_chunk_arrays(int *offsets, int *lengths, int total, int n) {
+    auto chunk_size = total / n;
+    for (auto i = 0; i < n; i++) {
+        offsets[i] = i * chunk_size;
+        lengths[i] = chunk_size;
+    }
+    lengths[n - 1] += total % n;
+}
 
+int bcast_dims(int *width, int *height) {
     // Broadcast image dimensions.
-    r = MPI_Bcast(&pgm.w, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    int r;
+    r = MPI_Bcast(width, 1, MPI_INT, 0, MPI_COMM_WORLD);
     if (r != 0)return r;
-    r = MPI_Bcast(&pgm.h, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    r = MPI_Bcast(height, 1, MPI_INT, 0, MPI_COMM_WORLD);
     if (r != 0)return r;
+    return 0;
+}
 
+int process_array(unsigned char *equalised, int rank, int world_size, int img_size, const unsigned char img[]) {
+    int r;
     // Calculate ranges in image data for each process.
-    auto img_size = pgm.w * pgm.h;
-    auto img_chunk_size = img_size / world_size;
     auto img_chunk_offsets = new int[world_size];
     auto img_chunk_lengths = new int[world_size];
-    for (auto i = 0; i < world_size; i++) {
-        img_chunk_offsets[i] = i * img_chunk_size;
-        img_chunk_lengths[i] = img_chunk_size;
-    }
-    img_chunk_lengths[world_size - 1] += img_size % world_size;
+    construct_chunk_arrays(img_chunk_offsets, img_chunk_lengths, img_size, world_size);
     auto img_chunk_length = img_chunk_lengths[rank];
 //    log(rank, chunk_offset);
     auto partial_img = new unsigned char[img_chunk_length];
     r = MPI_Scatterv(
-            &pgm.img[0],
+            &img[0],
             &img_chunk_lengths[0],
             &img_chunk_offsets[0],
             MPI_UNSIGNED_CHAR,
@@ -108,12 +112,7 @@ int process_pgm(int rank, int world_size) {
     // Calculate partial lookup table in scattered range [0, 255].
     auto vc_chunk_offsets = new int[world_size];
     auto vc_chunk_lengths = new int[world_size];
-    auto vc_chunk_size = VALUE_COUNT / world_size;
-    for (auto i = 0; i < world_size; i++) {
-        vc_chunk_offsets[i] = i * vc_chunk_size;
-        vc_chunk_lengths[i] = vc_chunk_size;
-    }
-    vc_chunk_lengths[world_size - 1] += VALUE_COUNT % world_size;
+    construct_chunk_arrays(vc_chunk_offsets, vc_chunk_lengths, VALUE_COUNT, world_size);
     auto vc_chunk_length = vc_chunk_lengths[rank];
     auto partial_cumulative = new int[vc_chunk_length];
     r = MPI_Scatterv(
@@ -152,8 +151,7 @@ int process_pgm(int rank, int world_size) {
         partial_equalised[i] = lookup[partial_img[i]];
     }
 
-    // Gatherv partial equalised image data into full image.
-    auto equalised = new unsigned char[img_size];
+    // Gatherv partial process_array image data into full image.
     r = MPI_Gatherv(
             &partial_equalised[0],
             img_chunk_length,
@@ -166,24 +164,346 @@ int process_pgm(int rank, int world_size) {
             MPI_COMM_WORLD
     );
     if (r != 0)return r;
-
-    if (rank == 0) {
-        pgm.img = equalised;
-        write_pgm(pgm, "out.mpi.pgm");
-    }
     delete[] partial_img;
     delete[] partial_histogram;
     delete[] partial_equalised;
     delete[] partial_lookup;
     delete[] partial_cumulative;
     delete[] histogram;
-    delete[] equalised;
     delete[] lookup;
     delete[] cumulative;
     return 0;
 }
 
+int process_pgm(int rank, int world_size) {
+    int r;
+    PGM_IMG pgm;
+    if (rank == 0) pgm = read_pgm("in.pgm");
+
+    r = bcast_dims(&pgm.w, &pgm.h);
+    if (r != 0)return r;
+    auto img_size = pgm.w * pgm.h;
+    auto start_time = MPI_Wtime();
+    auto equalised = new unsigned char[img_size];
+    r = process_array(equalised, rank, world_size, img_size, pgm.img);
+    if (r != 0)return r;
+    if (rank == 0) {
+        pgm.img = equalised;
+        auto end_time = MPI_Wtime();
+        auto duration = end_time - start_time;
+        printf("Took %f to process PGM file.\n", duration);
+        write_pgm(pgm, "out.mpi.pgm");
+    }
+    delete[] equalised;
+    return 0;
+}
+
 int process_ppm(int rank, int world_size) {
+    int r;
+    PPM_IMG ppm;
+    if (rank == 0)ppm = read_ppm("in.ppm");
+    auto start_time = MPI_Wtime();
+
+    // Broadcast image dimensions.
+    r = bcast_dims(&ppm.w, &ppm.h);
+    if (r != 0)return r;
+
+    r = process_as_hsl(rank, world_size, ppm);
+    if (r != 0)return r;
+    r = process_as_yuv(rank, world_size, ppm);
+    if (r != 0)return r;
+
+    if (rank == 0) {
+        auto end_time = MPI_Wtime();
+        auto duration = end_time - start_time;
+        printf("Took %f to process PPM file.\n", duration);
+    }
+
+    return 0;
+}
+
+int process_as_hsl(int rank, int world_size, PPM_IMG &ppm) {
+    auto start_time = MPI_Wtime();
+    int r;
+    HSL_IMG hsl;
+
+    r = ppm_to_hsl(ppm, rank, world_size, &hsl);
+    if (r != 0)return r;
+    auto img_size = hsl.width * hsl.height;
+    auto equalised = new unsigned char[img_size];
+    r = process_array(equalised, rank, world_size, img_size, hsl.l);
+    if (r != 0)return r;
+    if (rank == 0) {
+        hsl.l = equalised;
+    }
+    PPM_IMG o_ppm;
+    r = hsl_to_ppm(hsl, rank, world_size, &o_ppm);
+    if (r != 0) return r;
+    if (rank == 0) {
+        write_ppm(o_ppm, "out.hsl.mpi.ppm");
+        auto end_time = MPI_Wtime();
+        auto duration = end_time - start_time;
+        printf("Took %f to process PPM file as HSL.\n", duration);
+    }
+    delete[] equalised;
+    return 0;
+}
+
+int ppm_to_hsl(PPM_IMG &ppm, int rank, int world_size, HSL_IMG *hsl) {
+    int r;
+    hsl->width = ppm.w;
+    hsl->height = ppm.h;
+    auto img_size = hsl->width * hsl->height;
+    auto chunk_offsets = new int[world_size];
+    auto chunk_lengths = new int[world_size];
+    construct_chunk_arrays(chunk_offsets, chunk_lengths, img_size, world_size);
+    auto chunk_length = chunk_lengths[rank];
+    auto pr = new unsigned char[chunk_length];
+    auto pg = new unsigned char[chunk_length];
+    auto pb = new unsigned char[chunk_length];
+    r = MPI_Scatterv(
+            &ppm.img_r[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &pr[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD);
+    if (r != 0)return r;
+    r = MPI_Scatterv(
+            &ppm.img_g[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &pg[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD);
+    if (r != 0)return r;
+    r = MPI_Scatterv(
+            &ppm.img_b[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &pb[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD);
+    if (r != 0)return r;
+    auto ph = new float[chunk_length];
+    auto ps = new float[chunk_length];
+    auto pl = new unsigned char[chunk_length];
+    for (auto i = 0; i < chunk_length; i++) {
+        auto red = float(pr[i]) / MAX_VALUE;
+        auto green = float(pg[i]) / MAX_VALUE;
+        auto blue = float(pb[i]) / MAX_VALUE;
+        auto min = std::min({red, green, blue});
+        auto max = std::max({red, green, blue});
+        auto delta = max - min;
+        auto lightness = (max + min) / 2;
+        float hue, saturation;
+        if (delta == 0) {
+            hue = 0;
+            saturation = 0;
+        } else {
+            saturation = lightness < 0.5 ? delta / (max + min) : delta / (2 - max - min);
+            auto delta_r = ((max - red) / 6 + (delta / 2)) / delta;
+            auto delta_g = ((max - green) / 6 + (delta / 2)) / delta;
+            auto delta_b = ((max - blue) / 6 + (delta / 2)) / delta;
+            if (red == max) {
+                hue = delta_b - delta_g;
+            } else {
+                hue = green == max ? 1.0f / 3.0f + delta_r - delta_b : 2.0f / 3.0f + delta_g - delta_r;
+            }
+        }
+
+        if (hue < 0)hue += 1;
+        if (hue > 1)hue -= 1;
+
+        ph[i] = hue;
+        ps[i] = saturation;
+        pl[i] = (unsigned char) (lightness * 255);
+    }
+    hsl->h = new float[img_size];
+    hsl->s = new float[img_size];
+    hsl->l = new unsigned char[img_size];
+    r = MPI_Gatherv(
+            &ph[0],
+            chunk_length,
+            MPI_FLOAT,
+            &hsl->h[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_FLOAT,
+            0,
+            MPI_COMM_WORLD);
+    if (r != 0) return r;
+    r = MPI_Gatherv(
+            &ps[0],
+            chunk_length,
+            MPI_FLOAT,
+            &hsl->s[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_FLOAT,
+            0,
+
+            MPI_COMM_WORLD);
+    if (r != 0) return r;
+    r = MPI_Gatherv(
+            &pl[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            &hsl->l[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD);
+    if (r != 0) return r;
+    delete[] ph;
+    delete[] ps;
+    delete[] pl;
+    delete[] pr;
+    delete[] pg;
+    delete[] pb;
+    delete[] chunk_lengths;
+    delete[] chunk_offsets;
+    return 0;
+}
+
+float hue_to_rgb(float v0, float v1, float vh) {
+    if (vh < 0)vh += 1;
+    if (vh > 1)vh -= 1;
+    if ((6 * vh) < 1)return v1 + (v0 - v1) * 6 * vh;
+    if ((2 * vh) < 1)return v0;
+    if ((3 * vh) < 2)return v1 + (v0 - v1) * (2.0f / 3.0f - vh) * 6;
+    return v1;
+}
+
+int hsl_to_ppm(HSL_IMG &hsl, int rank, int world_size, PPM_IMG *ppm) {
+    int r;
+    ppm->w = hsl.width;
+    ppm->h = hsl.height;
+    auto img_size = ppm->h * ppm->w;
+    auto chunk_offsets = new int[world_size];
+    auto chunk_lengths = new int[world_size];
+    construct_chunk_arrays(chunk_offsets, chunk_lengths, img_size, world_size);
+    auto chunk_length = chunk_lengths[rank];
+    auto ph = new float[chunk_length];
+    auto ps = new float[chunk_length];
+    auto pl = new unsigned char[chunk_length];
+    r = MPI_Scatterv(
+            &hsl.h[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_FLOAT,
+            &ph[0],
+            chunk_length,
+            MPI_FLOAT,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (r != 0) return r;
+    r = MPI_Scatterv(
+            &hsl.s[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_FLOAT,
+            &ps[0],
+            chunk_length,
+            MPI_FLOAT,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (r != 0) return r;
+    r = MPI_Scatterv(
+            &hsl.l[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &pl[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (r != 0) return r;
+    auto pr = new unsigned char[chunk_length];
+    auto pg = new unsigned char[chunk_length];
+    auto pb = new unsigned char[chunk_length];
+    for (auto i = 0; i < chunk_length; i++) {
+        auto h = ph[i];
+        auto s = ps[i];
+        auto l = (float) pl[i] / 255.0f;
+        if (s == 0) {
+            auto x = (unsigned char) (l * 255);
+            pr[i] = x;
+            pg[i] = x;
+            pb[i] = x;
+        } else {
+            auto v0 = l < 0.5 ? l * (1 + s) : (l + s) - (s * l);
+            auto v1 = 2 * l - v0;
+            pr[i] = (unsigned char) (255 * hue_to_rgb(v0, v1, h + 1.0f / 3.0f));
+            pg[i] = (unsigned char) (255 * hue_to_rgb(v0, v1, h));
+            pb[i] = (unsigned char) (255 * hue_to_rgb(v0, v1, h - 1.0f / 3.0f));
+        }
+    }
+    ppm->img_r = new unsigned char[img_size];
+    ppm->img_g = new unsigned char[img_size];
+    ppm->img_b = new unsigned char[img_size];
+    r = MPI_Gatherv(
+            &pr[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            &ppm->img_r[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (r != 0) return r;
+    r = MPI_Gatherv(
+            &pg[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            &ppm->img_g[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (r != 0) return r;
+    r = MPI_Gatherv(
+            &pb[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            &ppm->img_b[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (r != 0) return r;
+    delete[] ph;
+    delete[] ps;
+    delete[] pl;
+    delete[] pr;
+    delete[] pg;
+    delete[] pb;
+    delete[] chunk_lengths;
+    delete[] chunk_offsets;
+    return 0;
+}
+
+int process_as_yuv(int rank, int world_size, PPM_IMG &ppm) {
     return 0;
 }
 
