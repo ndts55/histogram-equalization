@@ -21,9 +21,6 @@ target_link_libraries(contrast ${MPI_C_LIBRARIES})
 add_executable(contrast-mpi contrast-mpi.cpp)
 target_link_libraries(contrast-mpi PUBLIC MPI::MPI_CXX)
 
-add_executable(contrast-mpi-x contrast-mpi-x.cpp)
-target_link_libraries(contrast-mpi PUBLIC MPI::MPI_CXX)
-
 add_executable(contrast-mpi-openmp contrast-mpi-openmp.cpp)
 target_link_libraries(contrast-mpi-openmp ${MPI_C_LIBRARIES})
 
