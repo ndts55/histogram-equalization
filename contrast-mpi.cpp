@@ -504,6 +504,245 @@ int hsl_to_ppm(HSL_IMG &hsl, int rank, int world_size, PPM_IMG *ppm) {
 }
 
 int process_as_yuv(int rank, int world_size, PPM_IMG &ppm) {
+    auto start_time = MPI_Wtime();
+    int r;
+    YUV_IMG yuv;
+    r = ppm_to_yuv(ppm, rank, world_size, &yuv);
+    if (r != 0)return r;
+    auto img_size = yuv.w * yuv.h;
+    auto equalised = new unsigned char[img_size];
+    r = process_array(equalised, rank, world_size, img_size, yuv.img_y);
+    if (r != 0)return r;
+    if (rank == 0) {
+        yuv.img_y = equalised;
+    }
+    PPM_IMG o_ppm;
+    r = yuv_to_ppm(yuv, rank, world_size, &o_ppm);
+    if (r != 0)return r;
+    if (rank == 0) {
+        write_ppm(o_ppm, "out.yuv.mpi.ppm");
+        auto end_time = MPI_Wtime();
+        auto duration = end_time - start_time;
+        printf("Took %f to process PPM file as YUV.\n", duration);
+    }
+    delete[] equalised;
+    return 0;
+}
+
+int ppm_to_yuv(PPM_IMG &ppm, int rank, int world_size, YUV_IMG *yuv) {
+    int res;
+    yuv->w = ppm.w;
+    yuv->h = ppm.h;
+    auto img_size = yuv->w * yuv->h;
+    auto chunk_lengths = new int[world_size];
+    auto chunk_offsets = new int[world_size];
+    construct_chunk_arrays(chunk_offsets, chunk_lengths, img_size, world_size);
+    auto chunk_length = chunk_lengths[rank];
+    auto pr = new unsigned char[chunk_length];
+    auto pg = new unsigned char[chunk_length];
+    auto pb = new unsigned char[chunk_length];
+    res = MPI_Scatterv(
+            &ppm.img_r[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &pr[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    res = MPI_Scatterv(
+            &ppm.img_g[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &pg[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    res = MPI_Scatterv(
+            &ppm.img_b[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &pb[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    auto py = new unsigned char[chunk_length];
+    auto pu = new unsigned char[chunk_length];
+    auto pv = new unsigned char[chunk_length];
+    for (auto i = 0; i < chunk_length; i++) {
+        auto r = pr[i];
+        auto g = pg[i];
+        auto b = pb[i];
+        py[i] = (unsigned char) (0.299 * r + 0.587 * g + 0.114 * b);
+        pu[i] = (unsigned char) (-0.169 * r - 0.331 * g + 0.499 * b + 128);
+        pv[i] = (unsigned char) (0.499 * r - 0.418 * g - 0.0813 * b + 128);
+    }
+    yuv->img_y = new unsigned char[img_size];
+    yuv->img_u = new unsigned char[img_size];
+    yuv->img_v = new unsigned char[img_size];
+    res = MPI_Gatherv(
+            &py[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            &yuv->img_y[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    res = MPI_Gatherv(
+            &pu[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            &yuv->img_u[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    res = MPI_Gatherv(
+            &pv[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            &yuv->img_v[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    delete[] py;
+    delete[] pu;
+    delete[] pv;
+    delete[] pr;
+    delete[] pg;
+    delete[] pb;
+    delete[] chunk_lengths;
+    delete[] chunk_offsets;
+    return 0;
+}
+
+int yuv_to_ppm(YUV_IMG &yuv, int rank, int world_size, PPM_IMG *ppm) {
+    int res;
+    ppm->h = yuv.h;
+    ppm->w = yuv.w;
+    auto img_size = ppm->h * ppm->w;
+    auto chunk_offsets = new int[world_size];
+    auto chunk_lengths = new int[world_size];
+    construct_chunk_arrays(chunk_offsets, chunk_lengths, img_size, world_size);
+    auto chunk_length = chunk_lengths[rank];
+    auto py = new unsigned char[chunk_length];
+    auto pu = new unsigned char[chunk_length];
+    auto pv = new unsigned char[chunk_length];
+    res = MPI_Scatterv(
+            &yuv.img_y[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &py[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    res = MPI_Scatterv(
+            &yuv.img_u[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &pu[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    res = MPI_Scatterv(
+            &yuv.img_v[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            &pv[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    auto pr = new unsigned char[chunk_length];
+    auto pg = new unsigned char[chunk_length];
+    auto pb = new unsigned char[chunk_length];
+    for (auto i = 0; i < chunk_length; i++) {
+        auto y = (int) py[i];
+        auto cb = pu[i] - 128;
+        auto cr = pv[i] - 128;
+        pr[i] = (unsigned char) std::clamp((int) (y + 1.402 * cr), MIN_VALUE, MAX_VALUE);
+        pg[i] = (unsigned char) std::clamp((int) (y - 0.344 * cb - 0.714 * cr), MIN_VALUE, MAX_VALUE);
+        pb[i] = (unsigned char) std::clamp((int) (y + 1.772 * cb), MIN_VALUE, MAX_VALUE);
+    }
+    ppm->img_r = new unsigned char[img_size];
+    ppm->img_g = new unsigned char[img_size];
+    ppm->img_b = new unsigned char[img_size];
+    res = MPI_Gatherv(
+            &pr[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            &ppm->img_r[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    res = MPI_Gatherv(
+            &pg[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            &ppm->img_g[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    res = MPI_Gatherv(
+            &pb[0],
+            chunk_length,
+            MPI_UNSIGNED_CHAR,
+            &ppm->img_b[0],
+            &chunk_lengths[0],
+            &chunk_offsets[0],
+            MPI_UNSIGNED_CHAR,
+            0,
+            MPI_COMM_WORLD
+    );
+    if (res != 0) return res;
+    delete[] py;
+    delete[] pu;
+    delete[] pv;
+    delete[] pr;
+    delete[] pg;
+    delete[] pb;
+    delete[] chunk_lengths;
+    delete[] chunk_offsets;
     return 0;
 }
 
