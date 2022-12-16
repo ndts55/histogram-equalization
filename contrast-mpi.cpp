@@ -54,8 +54,8 @@ int bcast_dims(int *width, int *height) {
 int process_array(unsigned char *equalised, int rank, int world_size, int img_size, const unsigned char img[]) {
     int r;
     // Calculate ranges in image data for each process.
-    auto img_chunk_offsets = new int[world_size];
-    auto img_chunk_lengths = new int[world_size];
+    int img_chunk_offsets[world_size];
+    int img_chunk_lengths[world_size];
     construct_chunk_arrays(img_chunk_offsets, img_chunk_lengths, img_size, world_size);
     auto img_chunk_length = img_chunk_lengths[rank];
 //    log(rank, chunk_offset);
@@ -73,14 +73,14 @@ int process_array(unsigned char *equalised, int rank, int world_size, int img_si
     );
     if (r != 0)return r;
     // Calculate partial histogram.
-    auto partial_histogram = new int[VALUE_COUNT];
-    for (auto i = 0; i < VALUE_COUNT; i++)partial_histogram[i] = 0;
+    int partial_histogram[VALUE_COUNT];
+    for (int &i: partial_histogram)i = 0;
     for (auto i = 0; i < img_chunk_length; i++) {
         partial_histogram[partial_img[i]]++;
     }
 
     // Allreduce to complete histogram.
-    auto histogram = new int[VALUE_COUNT];
+    int histogram[VALUE_COUNT];
     r = MPI_Allreduce(
             &partial_histogram[0],
             &histogram[0],
@@ -92,7 +92,7 @@ int process_array(unsigned char *equalised, int rank, int world_size, int img_si
     if (r != 0)return r;
 
     // Calculate cumulative.
-    auto cumulative = new int[VALUE_COUNT];
+    int cumulative[VALUE_COUNT];
     if (rank == 0) {
         cumulative[0] = histogram[0];
         for (auto i = 1; i < VALUE_COUNT; i++)cumulative[i] = cumulative[i - 1] + histogram[i];
@@ -110,11 +110,11 @@ int process_array(unsigned char *equalised, int rank, int world_size, int img_si
     auto d = img_size - min;
 
     // Calculate partial lookup table in scattered range [0, 255].
-    auto vc_chunk_offsets = new int[world_size];
-    auto vc_chunk_lengths = new int[world_size];
+    int vc_chunk_offsets[world_size];
+    int vc_chunk_lengths[world_size];
     construct_chunk_arrays(vc_chunk_offsets, vc_chunk_lengths, VALUE_COUNT, world_size);
     auto vc_chunk_length = vc_chunk_lengths[rank];
-    auto partial_cumulative = new int[vc_chunk_length];
+    int partial_cumulative[vc_chunk_length];
     r = MPI_Scatterv(
             &cumulative[0],
             &vc_chunk_lengths[0],
@@ -127,12 +127,12 @@ int process_array(unsigned char *equalised, int rank, int world_size, int img_si
             MPI_COMM_WORLD
     );
     if (r != 0)return r;
-    auto partial_lookup = new int[vc_chunk_length];
+    int partial_lookup[vc_chunk_length];
     for (auto i = 0; i < vc_chunk_length; i++) {
         auto v = (int) std::round(((double) partial_cumulative[i] - min) * MAX_VALUE / d);
         partial_lookup[i] = std::clamp(v, MIN_VALUE, MAX_VALUE);
     }
-    auto lookup = new int[VALUE_COUNT];
+    int lookup[VALUE_COUNT];
     r = MPI_Allgatherv(
             &partial_lookup[0],
             vc_chunk_length,
@@ -165,13 +165,7 @@ int process_array(unsigned char *equalised, int rank, int world_size, int img_si
     );
     if (r != 0)return r;
     delete[] partial_img;
-    delete[] partial_histogram;
     delete[] partial_equalised;
-    delete[] partial_lookup;
-    delete[] partial_cumulative;
-    delete[] histogram;
-    delete[] lookup;
-    delete[] cumulative;
     return 0;
 }
 
@@ -254,8 +248,8 @@ int ppm_to_hsl(PPM_IMG &ppm, int rank, int world_size, HSL_IMG *hsl) {
     hsl->width = ppm.w;
     hsl->height = ppm.h;
     auto img_size = hsl->width * hsl->height;
-    auto chunk_offsets = new int[world_size];
-    auto chunk_lengths = new int[world_size];
+    int chunk_offsets[world_size];
+    int chunk_lengths[world_size];
     construct_chunk_arrays(chunk_offsets, chunk_lengths, img_size, world_size);
     auto chunk_length = chunk_lengths[rank];
     auto pr = new unsigned char[chunk_length];
@@ -371,8 +365,6 @@ int ppm_to_hsl(PPM_IMG &ppm, int rank, int world_size, HSL_IMG *hsl) {
     delete[] pr;
     delete[] pg;
     delete[] pb;
-    delete[] chunk_lengths;
-    delete[] chunk_offsets;
     return 0;
 }
 
@@ -390,8 +382,8 @@ int hsl_to_ppm(HSL_IMG &hsl, int rank, int world_size, PPM_IMG *ppm) {
     ppm->w = hsl.width;
     ppm->h = hsl.height;
     auto img_size = ppm->h * ppm->w;
-    auto chunk_offsets = new int[world_size];
-    auto chunk_lengths = new int[world_size];
+    int chunk_offsets[world_size];
+    int chunk_lengths[world_size];
     construct_chunk_arrays(chunk_offsets, chunk_lengths, img_size, world_size);
     auto chunk_length = chunk_lengths[rank];
     auto ph = new float[chunk_length];
@@ -498,8 +490,6 @@ int hsl_to_ppm(HSL_IMG &hsl, int rank, int world_size, PPM_IMG *ppm) {
     delete[] pr;
     delete[] pg;
     delete[] pb;
-    delete[] chunk_lengths;
-    delete[] chunk_offsets;
     return 0;
 }
 
@@ -534,8 +524,8 @@ int ppm_to_yuv(PPM_IMG &ppm, int rank, int world_size, YUV_IMG *yuv) {
     yuv->w = ppm.w;
     yuv->h = ppm.h;
     auto img_size = yuv->w * yuv->h;
-    auto chunk_lengths = new int[world_size];
-    auto chunk_offsets = new int[world_size];
+    int chunk_lengths[world_size];
+    int chunk_offsets[world_size];
     construct_chunk_arrays(chunk_offsets, chunk_lengths, img_size, world_size);
     auto chunk_length = chunk_lengths[rank];
     auto pr = new unsigned char[chunk_length];
@@ -632,8 +622,6 @@ int ppm_to_yuv(PPM_IMG &ppm, int rank, int world_size, YUV_IMG *yuv) {
     delete[] pr;
     delete[] pg;
     delete[] pb;
-    delete[] chunk_lengths;
-    delete[] chunk_offsets;
     return 0;
 }
 
@@ -642,8 +630,8 @@ int yuv_to_ppm(YUV_IMG &yuv, int rank, int world_size, PPM_IMG *ppm) {
     ppm->h = yuv.h;
     ppm->w = yuv.w;
     auto img_size = ppm->h * ppm->w;
-    auto chunk_offsets = new int[world_size];
-    auto chunk_lengths = new int[world_size];
+    int chunk_offsets[world_size];
+    int chunk_lengths[world_size];
     construct_chunk_arrays(chunk_offsets, chunk_lengths, img_size, world_size);
     auto chunk_length = chunk_lengths[rank];
     auto py = new unsigned char[chunk_length];
@@ -741,8 +729,6 @@ int yuv_to_ppm(YUV_IMG &yuv, int rank, int world_size, PPM_IMG *ppm) {
     delete[] pr;
     delete[] pg;
     delete[] pb;
-    delete[] chunk_lengths;
-    delete[] chunk_offsets;
     return 0;
 }
 
