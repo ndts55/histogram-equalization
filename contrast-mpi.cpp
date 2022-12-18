@@ -89,14 +89,12 @@ int process_array(unsigned char *equalised, int rank, int world_size, int img_si
             MPI_SUM,
             MPI_COMM_WORLD
     );
-    if (r != 0)return r;
+    if (r != 0) return r;
 
-    // Calculate cumulative.
+    // Calculate cumulative. Every thread calculates their own cumulative distribution.
     int cumulative[VALUE_COUNT];
-    if (rank == 0) {
-        cumulative[0] = histogram[0];
-        for (auto i = 1; i < VALUE_COUNT; i++)cumulative[i] = cumulative[i - 1] + histogram[i];
-    }
+    cumulative[0] = histogram[0];
+    for (auto i = 1; i < VALUE_COUNT; i++)cumulative[i] = cumulative[i - 1] + histogram[i];
 
     // Find the first non-zero value in complete histogram.
     int min;
@@ -110,40 +108,44 @@ int process_array(unsigned char *equalised, int rank, int world_size, int img_si
     auto d = img_size - min;
 
     // Calculate partial lookup table in scattered range [0, 255].
-    int vc_chunk_offsets[world_size];
-    int vc_chunk_lengths[world_size];
-    construct_chunk_arrays(vc_chunk_offsets, vc_chunk_lengths, VALUE_COUNT, world_size);
-    auto vc_chunk_length = vc_chunk_lengths[rank];
-    int partial_cumulative[vc_chunk_length];
-    r = MPI_Scatterv(
-            &cumulative[0],
-            &vc_chunk_lengths[0],
-            &vc_chunk_offsets[0],
-            MPI_INT,
-            &partial_cumulative[0],
-            vc_chunk_length,
-            MPI_INT,
-            0,
-            MPI_COMM_WORLD
-    );
-    if (r != 0)return r;
-    int partial_lookup[vc_chunk_length];
-    for (auto i = 0; i < vc_chunk_length; i++) {
-        auto v = (int) std::round(((double) partial_cumulative[i] - min) * MAX_VALUE / d);
-        partial_lookup[i] = std::clamp(v, MIN_VALUE, MAX_VALUE);
-    }
+//    int vc_chunk_offsets[world_size];
+//    int vc_chunk_lengths[world_size];
+//    construct_chunk_arrays(vc_chunk_offsets, vc_chunk_lengths, VALUE_COUNT, world_size);
+//    auto vc_chunk_length = vc_chunk_lengths[rank];
+//    int partial_cumulative[vc_chunk_length];
+//    r = MPI_Scatterv(
+//            &cumulative[0],
+//            &vc_chunk_lengths[0],
+//            &vc_chunk_offsets[0],
+//            MPI_INT,
+//            &partial_cumulative[0],
+//            vc_chunk_length,
+//            MPI_INT,
+//            0,
+//            MPI_COMM_WORLD
+//    );
+//    if (r != 0)return r;
+//    int partial_lookup[vc_chunk_length];
+//    for (auto i = 0; i < vc_chunk_length; i++) {
+//        auto v = (int) std::round(((double) partial_cumulative[i] - min) * MAX_VALUE / d);
+//        partial_lookup[i] = std::clamp(v, MIN_VALUE, MAX_VALUE);
+//    }
     int lookup[VALUE_COUNT];
-    r = MPI_Allgatherv(
-            &partial_lookup[0],
-            vc_chunk_length,
-            MPI_INT,
-            &lookup[0],
-            &vc_chunk_lengths[0],
-            &vc_chunk_offsets[0],
-            MPI_INT,
-            MPI_COMM_WORLD
-    );
-    if (r != 0) return r;
+    for (auto i = 0; i < VALUE_COUNT; i++) {
+        auto v = (int) std::round(((double) cumulative[i] - min) * MAX_VALUE / d);
+        lookup[i] = std::clamp(v, MIN_VALUE, MAX_VALUE);
+    }
+//    r = MPI_Allgatherv(
+//            &partial_lookup[0],
+//            vc_chunk_length,
+//            MPI_INT,
+//            &lookup[0],
+//            &vc_chunk_lengths[0],
+//            &vc_chunk_offsets[0],
+//            MPI_INT,
+//            MPI_COMM_WORLD
+//    );
+//    if (r != 0) return r;
 
     // Equalise the partial image data.
     auto partial_equalised = new unsigned char[img_chunk_length];
@@ -566,6 +568,7 @@ int ppm_to_yuv(PPM_IMG &ppm, int rank, int world_size, YUV_IMG *yuv) {
             0,
             MPI_COMM_WORLD
     );
+    if (res != 0) return res;
     auto py = new unsigned char[chunk_length];
     auto pu = new unsigned char[chunk_length];
     auto pv = new unsigned char[chunk_length];
