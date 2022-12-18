@@ -194,7 +194,7 @@ int process_pgm(int rank, int world_size) {
         auto end_time = MPI_Wtime();
         auto duration = end_time - start_time;
         printf("Took %fms to process PGM file.\n", duration * 1000);
-        write_pgm(pgm, "out.mpi.pgm");
+        write_pgm(pgm, "out.mpi.omp.pgm");
     }
     delete[] equalised;
     return 0;
@@ -242,7 +242,7 @@ int process_as_hsl(int rank, int world_size, PPM_IMG &ppm) {
     r = hsl_to_ppm(hsl, rank, world_size, &o_ppm);
     if (r != 0) return r;
     if (rank == 0) {
-        write_ppm(o_ppm, "out.hsl.mpi.ppm");
+        write_ppm(o_ppm, "out.hsl.mpi.omp.ppm");
         auto end_time = MPI_Wtime();
         auto duration = end_time - start_time;
         printf("Took %fms to process PPM file as HSL.\n", duration * 1000);
@@ -520,7 +520,7 @@ int process_as_yuv(int rank, int world_size, PPM_IMG &ppm) {
     r = yuv_to_ppm(yuv, rank, world_size, &o_ppm);
     if (r != 0)return r;
     if (rank == 0) {
-        write_ppm(o_ppm, "out.yuv.mpi.ppm");
+        write_ppm(o_ppm, "out.yuv.mpi.omp.ppm");
         auto end_time = MPI_Wtime();
         auto duration = end_time - start_time;
         printf("Took %fms to process PPM file as YUV.\n", duration * 1000);
